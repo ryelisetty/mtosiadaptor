@@ -1,0 +1,138 @@
+apply plugin: 'java'
+apply plugin: 'eclipse-wtp'
+apply plugin: 'idea'
+apply plugin: 'spring-boot' 
+apply plugin: 'io.spring.dependency-management' 
+apply plugin: 'war'
+
+
+version = '1.0.1'
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+war.archiveName "mtosi.war"
+archivesBaseName="mtosi"
+buildscript {
+    ext {
+        springBootVersion = '1.3.0.RELEASE'
+    }
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}") 
+        classpath("io.spring.gradle:dependency-management-plugin:0.5.3.RELEASE")
+    }
+}
+
+//To set the build specific properties from gradle. 
+processResources {
+    filesMatching("**/application.properties") {
+        expand version: version
+    }
+}
+
+repositories {
+   jcenter()
+   mavenCentral()
+   maven { url "http://oss.jfrog.org/artifactory/oss-release-local" }
+}
+
+bootRepackage {
+    mainClass = "com.adt.mtosi.Application"
+    classifier = "tomcat"
+    //jar.enabled = false
+}
+
+springBoot {
+    backupSource = false
+}
+
+configurations {
+    providedRuntime
+    all*.exclude group: 'org.slf4j', module: 'log4j-over-slf4j'
+	all*.exclude group: 'org.apache.logging.log4j', module: 'log4j-slf4j-impl'
+    jaxb
+}
+
+task genJaxb {
+    ext.sourcesDir = "${buildDir}/generated-sources/jaxb"
+    ext.classesDir = "${buildDir}/classes/jaxb"
+    ext.schemaDir = "src/main/resources/xsd/"
+
+    outputs.dir classesDir
+
+    doLast() {
+        project.ant {
+            taskdef name: "xjc", classname: "com.sun.tools.xjc.XJCTask",
+                    classpath: configurations.jaxb.asPath
+            mkdir(dir: sourcesDir)
+            mkdir(dir: classesDir)
+
+            xjc(destdir: sourcesDir) {
+            	schema(dir: schemaDir, includes: "*.xsd")
+                arg(value: "-wsdl")
+                produces(dir: sourcesDir, includes: "**/*.java")
+            }
+
+            javac(destdir: classesDir, source: 1.8, target: 1.8, debug: true,
+                    debugLevel: "lines,vars,source",
+                    classpath: configurations.jaxb.asPath) {
+                src(path: sourcesDir)
+                include(name: "**/*.java")
+                include(name: "*.java")
+            }
+
+            copy(todir: classesDir) {
+                fileset(dir: sourcesDir, erroronmissingdir: false) {
+                    exclude(name: "**/*.java")
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+	compile group: 'org.springframework.boot', name: 'spring-boot-starter-actuator'
+    compile group: 'org.springframework.boot', name: 'spring-boot-starter-web'
+    compile group: 'org.springframework.boot', name: 'spring-boot-starter-aop'
+    compile group: 'org.springframework.boot', name: 'spring-boot-starter-ws'
+    compile group: 'org.springframework.boot', name: 'spring-boot-starter-cache'
+   
+   // compile 'net.sf.ehcache:ehcache-core:2.6.10'
+    
+    compile("wsdl4j:wsdl4j:1.6.1")
+    jaxb("com.sun.xml.bind:jaxb-xjc:2.2.4-1")
+    compile(files(genJaxb.classesDir).builtBy(genJaxb))
+    
+    compile("org.apache.commons:commons-lang3:3.3.2")
+    compile group: 'org.json', name: 'json', version:'20140107'
+    compile group: 'org.apache.httpcomponents', name: 'httpclient', version:'4.4.1'
+    compile group: 'oro', name: 'oro', version:'2.0.8'
+    compile('com.google.code.gson:gson:2.3.1')
+	
+	   
+    providedRuntime("org.springframework.boot:spring-boot-starter-tomcat")
+    testCompile("org.springframework.boot:spring-boot-starter-test")
+   	providedCompile group: 'javax.servlet', name: 'javax.servlet-api', version:'3.1.0'
+   	
+}
+
+eclipse {
+    classpath {
+         containers.remove('org.eclipse.jdt.launching.JRE_CONTAINER')
+         containers 'org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8'
+    }
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.3'
+}
+
+bootRun {
+    systemProperties System.properties
+}
+
+sourceSets.main.java.srcDir "${buildDir}/generated-sources/jaxb"
+jar{
+	from genJaxb.classesDir
+}
